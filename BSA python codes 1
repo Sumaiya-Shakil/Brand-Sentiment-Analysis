@@ -1,0 +1,794 @@
+#Basic Libraries
+import pandas as pd 
+import numpy as np 
+
+#NLTK Libraries
+import nltk 
+import re
+import emoji
+import string
+from string import digits
+from nltk.corpus import stopwords
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from textblob import TextBlob
+import spacy
+from textstat.textstat import textstatistics
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Scikit-Learn libraries
+from sklearn.svm import SVC
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import BernoulliNB 
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn import svm, datasets
+from sklearn import preprocessing
+from sklearn.model_selection import StratifiedKFold
+from sklearn import linear_model
+#Metrics libraries
+from sklearn import metrics
+from sklearn.metrics import classification_report
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import confusion_matrix, accuracy_score
+
+#Visualization libraries
+import matplotlib.pyplot as plt 
+from matplotlib import rcParams
+import seaborn as sns
+from textblob import TextBlob
+import plotly.express as px
+import plotly.offline as po
+import plotly.graph_objects as go
+%matplotlib inline
+
+#Ignore warnings
+import warnings
+warnings.filterwarnings('ignore')
+
+#Other miscellaneous libraries
+from itertools import cycle
+from statistics import stdev
+from imblearn.over_sampling import SMOTE
+from statistics import mean
+from collections import defaultdict
+from collections import Counter
+
+#from wordcloud import WordCloud,STOPWORDS 
+
+pd.set_option("display.max_columns",None)
+
+pd.set_option("display.max_rows",None)
+
+
+#Loading the Dataset
+data=pd.read_excel("CarDekho.xlsx")
+
+#Creating a shallow copy of the data set 
+df=data.copy()
+
+#The top 5 rows of the pandas dataframe has been viewed with the pandas head() method
+df.head()
+
+## print shape of dataset with rows and columns and information
+print ("The shape of the  data is (row, column):"+ str(df.shape))
+print (df.info())
+
+# Basic Statistical Details
+df.describe()
+# Checking for NULL Values
+df.isna().sum()
+null_bs_df=df[df["Boot_Space"].isna()]
+null_bs_df[["Brand","Variant_Name","Model_Name"]].value_counts()
+df[(df["Brand"]=="Mahindra Cars") | (df["Brand"]=="Nissan Cars")]["Boot_Space"].mean()
+df["Boot_Space "]=df["Boot_Space"].fillna(342)
+df["Boot_Space"].isna().sum()
+
+#Percentage of data of each particular car brand
+print(np.round(df["brand"].value_counts()/df.shape[0]*100,1))
+# Visualizing: Percentage of data of each particular car brand
+fig=px.pie(values=df["brand"].value_counts(),names=df["brand"].unique().tolist(),hole=.3)
+fig.update_traces(textposition='inside', textinfo='percent+label')
+
+df.columns
+df['sentiment_by_rating'] = df['rating'].apply(lambda rating : 'Positive' if rating > 3
+                                                           else('Negative' if rating < 3 else 'Neutral'))
+                                                          
+df['sentiment_by_rating'].value_counts()
+df.groupby('sentiment_by_rating')['rating'].value_counts()
+
+plt.figure(figsize=(15,5))
+plt.subplot(131)
+df[df['sentiment_by_rating']=='Positive']['rating'].plot(kind='hist',x='review_len',color='green',y='count',title='Postive')
+plt.ylabel('Number of Rating')
+plt.subplot(132)
+df[df['sentiment_by_rating']=='Neutral']['rating'].plot(kind='hist',x='review_len',color='skyblue',y='count',title='Neutral')
+plt.ylabel('Number of Rating')
+plt.subplot(133)
+df[df['sentiment_by_rating']=='Negative']['rating'].plot(kind='hist',x='review_len',color='pink',y='count',title='Negative')
+plt.ylabel('Number of Rating')
+
+# Creating function to make text lowercase, remove text in square brackets,remove links,remove punctuation
+# and remove words containing numbers
+def review_cleaning(text):
+    '''Make text lowercase, remove text in square brackets,remove links,remove punctuation
+    and remove words containing numbers.'''
+    text = str(text).lower()
+    text = re.sub('\[.*?\]', '', text)
+    text = re.sub('https?://\S+|www\.\S+', '', text)
+    text = re.sub('<.*?>+', '', text)
+    text = re.sub('[%s]' % re.escape(string.punctuation), '', text)
+    text = re.sub('\n', '', text)
+    text = re.sub('\w*\d\w*', '', text)
+    return text
+    
+ # Clean only digits from text
+def remove_digits(text1):
+    return text1.translate(str.maketrans('','',digits)) 
+
+# Clean emojis from text
+def strip_emoji(text):
+    return re.sub(emoji.get_emoji_regexp(), r"", text) 
+
+# Applying all the first function on 'review' column
+df['review']=df['review'].apply(lambda x:review_cleaning(x))
+
+# Applying all the second function on 'review' column
+df['review1']=df['review'].apply(lambda x:remove_digits(x))
+
+# Applying all the third function on 'review' column
+df['cleaned_review']=df['review1'].apply(lambda x:strip_emoji(x))
+
+# dropping unnecessary columns
+df = df.drop(['review', 'review1'], axis = 1)
+df.head()
+
+import nltk 
+nltk.download('stopwords')
+
+#Let's check Stop Words list first
+stop_words = stopwords.words('english')
+print(stop_words)
+
+stop_words = [e for e in stop_words if e not in ('no', 'nor', 'not',"don't","hasn't","hadn't","doesn't","aren't", 'couldn', "couldn't", 'didn', "didn't", "aren't", "couldn't",  "didn't","doesn't", "hadn't", "hasn't", "haven't",  "isn't", "mightn't", "mustn't", "needn't",  "shan't",  "shouldn't",  "wasn't", "weren't", "won't", "wouldn't")]
+df['cleaned_review'] = df['cleaned_review'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
+df.head()
+
+import nltk
+nltk.download('vader_lexicon')
+
+analyzer = SentimentIntensityAnalyzer()
+df['neg_score'] = [analyzer.polarity_scores(x)['neg'] for x in df['cleaned_review']]
+df['pos_score'] = [analyzer.polarity_scores(x)['pos'] for x in df['cleaned_review']]
+df.head()
+
+plt.figure(figsize=(15,5))
+  
+# addind first subplot
+plt.subplot(121)
+sns.distplot(df["neg_score"])
+plt.title("Negative Polarity Distribution of Review")
+
+# adding second subplot
+plt.subplot(122)
+sns.distplot(df["pos_score"])
+plt.title("Positive Polarity Distribution of Review")
+plt.show()
+
+df['polarity'] = df['cleaned_review'].map(lambda text: TextBlob(text).sentiment.polarity)
+df['subjectivity'] = df['cleaned_review'].map(lambda text:TextBlob(text).sentiment.subjectivity)
+df.head()
+
+plt.figure(figsize=(15,5))
+  
+# addind first subplot
+plt.subplot(121)
+sns.distplot(df["polarity"], kde=False, color= 'g')
+plt.title("Polarity Distribution")
+
+# addding second subplot
+plt.subplot(122)
+sns.distplot(df["subjectivity"], kde=False, color='b')
+plt.title("Subjectivity Distribution")
+plt.show()
+
+df['review_len'] = df['cleaned_review'].astype(str).apply(len)
+df['word_count'] = df['cleaned_review'].apply(lambda x: len(str(x).split()))
+df.head()
+
+## Let's see the distribution of review length and word count.......
+plt.figure(figsize=(15,5))
+
+plt.subplot(121)
+df['review_len'].plot( kind='hist',bins=100,x='review_len',color='red',y='count',title='Review Text Length Distribution')
+
+plt.subplot(122)
+df['word_count'].plot(kind='hist', bins=100,x='word_count',color='purple',y='count',title='word count Distribution')
+plt.show()
+
+# plotting the distribution of word count
+fig = plt.figure(figsize = (15, 6))
+sns.distplot(df['word_count'][df['sentiment_by_rating']==2], color='g', label = 'positive')
+sns.distplot(df['word_count'][df['sentiment_by_rating']==0], color='r', label = 'negative')
+sns.distplot(df['word_count'][df['sentiment_by_rating']==1], color='b', label = 'neutral')
+plt.legend(loc='best')
+plt.xlabel('No. of Words', size = 14)
+plt.ylabel('Density', size = 14)
+plt.title('The Distribution of Number of Words for each Class', fontsize = 14)
+plt.show()
+
+#Creating Sentiment by Review using polarity
+df['sentiment_by_review'] = df['polarity'].apply(lambda polarity : "Positive" if polarity >0 else("Negative" if polarity<0  else "Neutral"))
+
+# Create an instance of LabelEncoder() and store it in label_encoder variable/object
+label_encoder = LabelEncoder() 
+  
+# Encode labels in column 'sentiment'. 
+df['sentiment_by_rating']= label_encoder.fit_transform(df['sentiment_by_rating']) 
+  
+df['sentiment_by_rating'].unique()
+
+df['sentiment_by_review']=df['sentiment_by_review'].replace({"Positive":2,"Neutral":1,"Negative":0})
+
+compare_sentiment=df[df["sentiment_by_rating"]!=df["sentiment_by_review"]][["cleaned_review","sentiment_by_rating","sentiment_by_review"]]
+compare_sentiment.shape
+
+review_pos = df[df["sentiment_by_rating"]==2]
+review_neu = df[df["sentiment_by_rating"]==1]
+review_neg = df[df["sentiment_by_rating"]==0]
+
+!pip install wordcloud
+from wordcloud import WordCloud
+
+# Creating 3 Sub DataFrame by Sentiments
+review_pos = df[df["sentiment_by_rating"] == 2]
+text = review_pos['cleaned_review']
+wordcloud = WordCloud(
+    width = 3000,
+    height = 2000,
+    background_color = 'black',
+    stopwords = stop_words).generate(str(text))
+fig = plt.figure(
+    figsize = (40, 30),
+    facecolor = 'k',
+    edgecolor = 'k')
+plt.imshow(wordcloud, interpolation = 'bilinear')
+plt.axis('off')
+plt.tight_layout(pad=0)
+plt.show()
+
+review_neu = df[df["sentiment_by_rating"] == 1]
+text = review_neu['cleaned_review']
+wordcloud = WordCloud(
+    width = 3000,
+    height = 2000,
+    background_color = 'black',
+    stopwords = stop_words).generate(str(text))
+fig = plt.figure(
+    figsize = (40, 30),
+    facecolor = 'k',
+    edgecolor = 'k')
+plt.imshow(wordcloud, interpolation = 'bilinear')
+plt.axis('off')
+plt.tight_layout(pad=0)
+plt.show()
+
+review_neg = df[df["sentiment_by_rating"] == 0]
+text = review_neg['cleaned_review']
+wordcloud = WordCloud(
+    width = 3000,
+    height = 2000,
+    background_color = 'black',
+    stopwords = stop_words).generate(str(text))
+fig = plt.figure(
+    figsize = (40, 30),
+    facecolor = 'k',
+    edgecolor = 'k')
+plt.imshow(wordcloud, interpolation = 'bilinear')
+plt.axis('off')
+plt.tight_layout(pad=0)
+plt.show()
+
+# Method to generate n-grams
+def generate_N_grams(text,ngram=1):
+  words=[word for word in text.split(" ") if word not in set(stopwords.words('english'))]  
+  print("Sentence after removing stopwords:",words)
+  temp=zip(*[words[i:] for i in range(0,ngram)])
+  ans=[' '.join(ngram) for ngram in temp]
+  return ans
+  
+positiveValues=defaultdict(int)
+negativeValues=defaultdict(int)
+neutralValues=defaultdict(int)
+
+# get the count of every word in cleaned review column where sentiment="positive"
+for text in review_pos[review_pos.sentiment_by_rating == 2].cleaned_review:
+  for word in generate_N_grams(text):
+    positiveValues[word]+=1
+    
+# get the count of every word in cleaned review column where sentiment="negative"    
+for text in review_neg[review_neg.sentiment_by_rating == 0].cleaned_review:
+  for word in generate_N_grams(text):
+    negativeValues[word]+=1
+    
+# get the count of every word in cleaned review column where sentiment="neutral"    
+for text in review_neu[review_neu.sentiment_by_rating == 1].cleaned_review:
+  for word in generate_N_grams(text):
+    neutralValues[word]+=1
+    
+df_positive=pd.DataFrame(sorted(positiveValues.items(),key=lambda x:x[1],reverse=True))
+df_negative=pd.DataFrame(sorted(negativeValues.items(),key=lambda x:x[1],reverse=True))
+df_neutral=pd.DataFrame(sorted(neutralValues.items(),key=lambda x:x[1],reverse=True))
+
+pd1=df_positive[0][:10]
+pd2=df_positive[1][:10]
+
+# plotting positive dataframe(unigram) 
+plt.figure(1,figsize=(16,4))
+plt.bar(pd1, pd2, color ='green', width = 0.4)
+plt.xlabel("Words in positive dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in positive dataframe-UNIGRAM ANALYSIS")
+plt.show()
+
+ned1=df_negative[0][:10]
+ned2=df_negative[1][:10]
+
+# plotting negative dataframe(unigram)
+plt.figure(1,figsize=(16,4))
+plt.bar(ned1, ned2, color ='red', width = 0.4)
+plt.xlabel("Words in negative dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in negative dataframe-UNIGRAM ANALYSIS")
+plt.show()
+
+nud1=df_neutral[0][:10]
+nud2=df_neutral[1][:10]
+
+# plotting neutral dataframe(unigram)
+plt.figure(1,figsize=(16,4))
+plt.bar(nud1, nud2, color ='purple', width = 0.4)
+plt.xlabel("Words in neutral dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in neutral dataframe-UNIGRAM ANALYSIS")
+plt.show()
+
+positiveValues2=defaultdict(int)
+negativeValues2=defaultdict(int)
+neutralValues2=defaultdict(int)
+
+# get the count of every word in cleaned review column where sentiment="positive"
+for text in review_pos[review_pos.sentiment_by_rating == 2].cleaned_review:
+  for word in generate_N_grams(text, 2):
+    positiveValues2[word]+=1
+    
+# get the count of every word in cleaned review column where sentiment="negative"      
+for text in review_neg[review_neg.sentiment_by_rating == 0].cleaned_review:
+  for word in generate_N_grams(text, 2):
+    negativeValues2[word]+=1
+    
+# get the count of every word in cleaned review column where sentiment="neutral"    
+for text in review_neu[review_neu.sentiment_by_rating == 1].cleaned_review:
+  for word in generate_N_grams(text, 2):
+    neutralValues2[word]+=1
+    
+df_positive2=pd.DataFrame(sorted(positiveValues2.items(),key=lambda x:x[1],reverse=True))
+df_negative2=pd.DataFrame(sorted(negativeValues2.items(),key=lambda x:x[1],reverse=True))
+df_neutral2=pd.DataFrame(sorted(neutralValues2.items(),key=lambda x:x[1],reverse=True))
+
+pd1bi=df_positive2[0][:10]
+pd2bi=df_positive2[1][:10]
+
+# plotting positive dataframe(bigram)
+plt.figure(1,figsize=(16,4))
+plt.bar(pd1bi, pd2bi, color ='green', width = 0.4)
+plt.xlabel("Words in positive dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in positive dataframe-BIGRAM ANALYSIS")
+plt.show()
+
+ned1bi=df_negative2[0][:10]
+ned2bi=df_negative2[1][:10]
+
+# plotting negative dataframe(bigram)
+plt.figure(1,figsize=(16,4))
+plt.bar(ned1bi, ned2bi, color ='red', width = 0.4)
+plt.xlabel("Words in negative dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in negative dataframe-BIGRAM ANALYSIS")
+plt.show()
+
+nud1bi=df_neutral2[0][:10]
+nud2bi=df_neutral2[1][:10]
+# plotting neutral dataframe(bigram)
+plt.figure(1,figsize=(16,4))
+plt.bar(nud1bi, nud2bi, color ='purple', width = 0.4)
+plt.xlabel("Words in neutral dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in neutral dataframe-BIGRAM ANALYSIS")
+plt.show()
+
+positiveValues3=defaultdict(int)
+negativeValues3=defaultdict(int)
+neutralValues3=defaultdict(int)
+
+# get the count of every word in cleaned review column where sentiment="positive"
+for text in review_pos[review_pos.sentiment_by_rating==2].cleaned_review:
+  for word in generate_N_grams(text, 3):
+    positiveValues3[word]+=1
+    
+# get the count of every word in cleaned review column where sentiment="negative"    
+for text in review_neg[review_neg.sentiment_by_rating==0].cleaned_review:
+  for word in generate_N_grams(text, 3):
+    negativeValues3[word]+=1
+    
+# get the count of every word in cleaned review column where sentiment="neutral"    
+for text in review_neu[review_neu.sentiment_by_rating==1].cleaned_review:
+  for word in generate_N_grams(text, 3):
+    neutralValues3[word]+=1
+    
+df_positive3=pd.DataFrame(sorted(positiveValues3.items(),key=lambda x:x[1],reverse=True))
+df_negative3=pd.DataFrame(sorted(negativeValues3.items(),key=lambda x:x[1],reverse=True))
+df_neutral3=pd.DataFrame(sorted(neutralValues3.items(),key=lambda x:x[1],reverse=True))
+
+pd1tri=df_positive3[0][:10]
+pd2tri=df_positive3[1][:10]
+# plotting positive dataframe(trigram)
+plt.figure(1,figsize=(20,4))
+plt.bar(pd1tri, pd2tri, color ='green', width = 0.4)
+plt.xlabel("Words in positive dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in positive dataframe-TRIGRAM ANALYSIS")
+plt.xticks(rotation = 45)
+plt.show()
+
+ned1tri=df_negative3[0][:10]
+ned2tri=df_negative3[1][:10]
+# plotting negative dataframe(trigram)
+plt.figure(1,figsize=(20,4))
+plt.bar(ned1tri, ned2tri, color ='red', width = 0.4)
+plt.xlabel("Words in negative dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in negative dataframe-TRIGRAM ANALYSIS")
+plt.xticks(rotation = 45)
+plt.show()
+
+nud1tri=df_neutral3[0][:10]
+nud2tri=df_neutral3[1][:10]
+# plotting neutral dataframe(trigram)
+plt.figure(1,figsize=(20,4))
+plt.bar(nud1tri, nud2tri, color ='purple', width = 0.4)
+plt.xlabel("Words in neutral dataframe")
+plt.ylabel("Count")
+plt.title("Top 10 words in neutral dataframe-TRIGRAM ANALYSIS")
+plt.xticks(rotation = 45)
+plt.show()
+
+df['cleaned_review']
+
+import nltk
+nltk.download('punkt')
+
+#tokenizing
+df['tokenized_sents'] = df.apply(lambda row: nltk.word_tokenize(row['cleaned_review']), axis=1)
+df.head()
+
+#TFIDF
+def identity_tokenizer(text):
+    return text
+
+tfidf = TfidfVectorizer(tokenizer=identity_tokenizer, stop_words='english', max_features=5000,
+                        lowercase=False, ngram_range=(2,2))    
+x = tfidf.fit_transform(df['tokenized_sents'])
+print('list:', tfidf.vocabulary_)
+
+import pickle
+file ="final_tfidf.pickle"
+pickle.dump(tfidf,open(file,"wb"))
+
+##Model Creation By Using Rating
+# Getting the target variable(encoded)
+y = df['sentiment_by_rating']
+
+##Handling Imbalance (SMOTE Method)
+print(f'Original dataset shape : {Counter(y)}')
+
+smote = SMOTE(random_state=42)
+x_res, y_res = smote.fit_resample(x, y)
+
+print(f'Resampled dataset shape {Counter(y_res)}')
+
+## Divide the dataset into Train and Test
+x_train, x_test, y_train, y_test = train_test_split(x_res, y_res, test_size=0.20, random_state=0)
+
+#creating the objects
+randomfor = RandomForestClassifier()
+logreg_cv = LogisticRegression(random_state=0)
+dt_cv=DecisionTreeClassifier()
+knn_cv=KNeighborsClassifier()
+svc_cv=SVC()
+nb_cv=BernoulliNB()
+cv_dict = {0: 'random forest', 1: 'Logistic Regression', 2: 'Decision Tree',3:'KNN',4:'SVC',5:'Naive Bayes'}
+cv_models=[randomfor,logreg_cv,dt_cv,knn_cv,svc_cv,nb_cv]
+
+
+for i,model in enumerate(cv_models):
+    print("{} Test Accuracy: {}".format(cv_dict[i],cross_val_score(model, x, y, cv=10, scoring ='accuracy').mean()))
+    
+##Stratified K Fold (Cross Validation Method)
+from statistics import stdev
+# Create classifier object
+logreg=LogisticRegression()
+
+# Create StratifiedKFold object
+skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=1)
+lst_accu_stratified = []
+  
+    
+for train_index, test_index in skf.split(x, y):
+    x_train_fold, x_test_fold = x_res[train_index], x_res[test_index]
+    y_train_fold, y_test_fold = y_res[train_index], y_res[test_index]
+    logreg.fit(x_train_fold, y_train_fold)
+    lst_accu_stratified.append(logreg.score(x_test_fold, y_test_fold))
+  
+# Print the output.
+print('List of possible accuracy:', lst_accu_stratified)
+print('\nMaximum Accuracy That can be obtained from this model is:',
+      max(lst_accu_stratified)*100, '%')
+print('\nMinimum Accuracy:',
+      min(lst_accu_stratified)*100, '%')
+print('\nOverall Accuracy:',
+      mean(lst_accu_stratified)*100, '%')
+print('\nStandard Deviation is:', stdev(lst_accu_stratified))
+
+##Logistic Regression with Hyperparameter tuning
+param_grid = {'C': np.logspace(-4, 4, 50),
+             'penalty':['l1', 'l2']}
+clf = GridSearchCV(LogisticRegression(random_state=0), param_grid, cv=5, verbose=0, n_jobs=-1)
+best_model = clf.fit(x_train,y_train)
+print(best_model.best_estimator_)
+print("The mean accuracy of the model is:",best_model.score(x_test,y_test))
+
+#Now we can easily put the values and improve the model accuracy
+logreg = LogisticRegression(C = 10000.0, random_state=0)
+logreg.fit(x_train, y_train)
+y_pred = logreg.predict(x_test)
+print('Accuracy of logistic regression classifier on test set: {:.2f}'.format(logreg.score(x_test, y_test)))
+
+file="final_model.pickle"
+pickle.dump(logreg,open(file,"wb"))
+
+##Classification Metrics
+#creating confusion matrix 
+cm = confusion_matrix(y_test,y_pred)
+
+##Generating heatmap to visualize the confusion matrix
+ax = sns.heatmap(cm, annot=True, cmap='Blues')
+
+##Setting up the title and Labels
+ax.set_title('Confusion Matrix with labels\n\n');
+ax.set_xlabel('\n  predicted sentiment Category')
+ax.set_ylabel('Actual sentiment Category ');
+
+##Ticket labels - List must be in alphabetical order
+ax.xaxis.set_ticklabels(['Negative','Neutral', 'Positive'])
+ax.yaxis.set_ticklabels(['Negative','Neutral', 'Positive'])
+plt.show()
+
+print("Classification Report:\n",classification_report(y_test, y_pred))
+
+##ROC-AUC curve
+from sklearn.preprocessing import label_binarize
+#Binarizing the target feature
+y = label_binarize(y, classes=[0, 1, 2])
+n_classes = y.shape[1]
+
+#Train-Test split(80:20)
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=.2,
+                                                    random_state=0)
+
+#OneVsRestClassifier
+classifier = OneVsRestClassifier(svm.SVC(kernel='linear', probability=True,
+                                 random_state=10))
+y_score = classifier.fit(x_train, y_train).decision_function(x_test)
+
+#Computing TPR and FPR
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
+for i in range(n_classes):
+    fpr[i], tpr[i], _ = roc_curve(y_test[:, i], y_score[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
+    
+# Compute micro-average ROC curve and ROC area
+fpr["micro"], tpr["micro"], _ = roc_curve(y_test.ravel(), y_score.ravel())
+roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+    
+# aggregate all false positive rates
+all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
+
+# interpolate all ROC curves at this points
+mean_tpr = np.zeros_like(all_fpr)
+for i in range(n_classes):
+    mean_tpr += np.interp(all_fpr, fpr[i], tpr[i])
+
+# Finally average it and compute AUC
+mean_tpr /= n_classes
+
+fpr["macro"] = all_fpr
+tpr["macro"] = mean_tpr
+roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
+
+# Plot all ROC curves
+plt.figure()
+plt.plot(fpr["micro"], tpr["micro"],
+         label='micro-average ROC curve (area = {0:0.2f})'
+               ''.format(roc_auc["micro"]),
+         color='deeppink', linestyle=':', linewidth=4)
+plt.plot(fpr["macro"], tpr["macro"],
+         label='macro-average ROC curve (area = {0:0.2f})'
+               ''.format(roc_auc["macro"]),
+         color='navy', linestyle=':', linewidth=4)
+
+colors = cycle(['aqua', 'darkorange', 'cornflowerblue'])
+for i, color in zip(range(n_classes), colors):
+    plt.plot(fpr[i], tpr[i], color=color, lw=4,
+             label='ROC curve of class {0} (area = {1:0.2f})'
+             ''.format(i, roc_auc[i]))
+
+plt.plot([0, 1], [0, 1], 'k--', lw=4)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver operating characteristic')
+plt.legend(loc="lower right")
+plt.show()
+
+# Getting the target variable(encoded)
+
+y1=df['sentiment_by_review']
+
+#Handling Imbalance (SMOTE Method)
+
+print(f'Original dataset shape : {Counter(y1)}')
+
+smote = SMOTE(random_state=42)
+x1_res, y1_res = smote.fit_resample(x, y1)
+
+print(f'Resampled dataset shape {Counter(y1_res)}')
+
+x1_train, x1_test, y1_train, y1_test = train_test_split(x1_res, y1_res, test_size = 0.2,random_state=0) 
+
+##Model selection
+#creating the objects
+randomfor = RandomForestClassifier()
+logreg_cv = LogisticRegression(random_state=0)
+dt_cv=DecisionTreeClassifier()
+knn_cv=KNeighborsClassifier()
+svc_cv=SVC()
+nb_cv=BernoulliNB()
+cv_dict = {0: 'random forest', 1: 'Logistic Regression', 2: 'Decision Tree',3:'KNN',4:'SVC',5:'Naive Bayes'}
+cv_models=[randomfor,logreg_cv,dt_cv,knn_cv,svc_cv,nb_cv]
+
+
+for i,model in enumerate(cv_models):
+    print("{} Test Accuracy: {}".format(cv_dict[i],cross_val_score(model, x, y1, cv=10, scoring ='accuracy').mean())
+    
+##Stratified K Fold (Cross Validation Method)
+from statistics import mean, stdev
+# Create classifier object
+logreg=LogisticRegression()
+
+
+# Create StratifiedKFold object
+skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=1)
+lst_accu_stratified1 = []
+logreg=LogisticRegression()
+
+  
+for train_index1, test_index1 in skf.split(x, y1):
+    x1_train_fold, x1_test_fold = x1_res[train_index1], x1_res[test_index1]
+    y1_train_fold, y1_test_fold = y1_res[train_index1], y1_res[test_index1]
+    logreg.fit(x1_train_fold, y1_train_fold)
+    lst_accu_stratified1.append(logreg.score(x1_test_fold, y1_test_fold))
+  
+# Print the output.
+print('List of possible accuracy:', lst_accu_stratified1)
+print('\nMaximum Accuracy That can be obtained from this model is:',
+      max(lst_accu_stratified1)*100, '%')
+print('\nMinimum Accuracy:',
+      min(lst_accu_stratified1)*100, '%')
+print('\nOverall Accuracy:',
+      mean(lst_accu_stratified1)*100, '%')
+print('\nStandard Deviation is:', stdev(lst_accu_stratified1))
+
+
+##Logistic Regression with Hyperparameter tuning
+param_grid = {'C': np.logspace(-4, 4, 50),
+             'penalty':['l1', 'l2']}
+clf = GridSearchCV(LogisticRegression(random_state=0), param_grid,cv=5, verbose=0,n_jobs=-1)
+best_model = clf.fit(x1_train,y1_train)
+print(best_model.best_estimator_)
+print("The mean accuracy of the model is:",best_model.score(x1_test,y1_test))
+
+#Now we can easily put the values and improve the model accuracy
+logreg = LogisticRegression(C = 4714.8663634573895, random_state=0)
+logreg.fit(x1_train, y1_train)
+y1_pred = logreg.predict(x1_test)
+print('Accuracy of logistic regression classifier on test set: {:.2f}'.format(logreg.score(x1_test, y1_test)))
+
+##Classification Metrics
+#creating confusion matrix 
+cm1 = confusion_matrix(y1_test,y1_pred)
+
+##Generating heatmap to visualize the confusion matrix
+ax = sns.heatmap(cm1, annot=True, cmap='PiYG_r')
+
+##Setting up the title and Labels
+ax.set_title('Seaborn Confusion Matrix with labels\n\n');
+ax.set_xlabel('\n  predicted sentiment Category')
+ax.set_ylabel('Actual sentiment Category ');
+
+## Ticket labels - List must be in alphabetical order
+ax.xaxis.set_ticklabels(['neg','neu', 'pos'])
+ax.yaxis.set_ticklabels(['neg','neu', 'pos'])
+
+print("Classification Report:\n",classification_report(y1_test, y1_pred))
+
+txt = [input("Please enter a review: ")]
+review_df = pd.DataFrame(txt,columns = ["review"])
+review_df
+
+# Applying all the first function on 'review' column
+review_df['review']=review_df['review'].apply(lambda x:review_cleaning(x))
+
+# Applying all the second function on 'review' column
+review_df['review1']=review_df['review'].apply(lambda x:remove_digits(x))
+
+# Applying all the third function on 'review' column
+review_df['cleaned_review']=review_df['review1'].apply(lambda x:strip_emoji(x))
+
+review_df['cleaned_review'] = review_df['cleaned_review'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
+review_df
+review_df['tokenized_sents'] = review_df.apply(lambda row: nltk.word_tokenize(row['cleaned_review']), axis=1)
+review_df.head()
+
+saved_tfidf = pickle.load(open('final_tfidf.pickle','rb'))
+
+X = saved_tfidf.transform(review_df['tokenized_sents'])
+saved_model = pickle.load(open('final_model.pickle','rb'))
+pred=saved_model.predict(X)[0]
+pred
+
+##OUTPUT
+p1_review = [input("Please enter a review:\n ")]
+review_df = pd.DataFrame(p1_review,columns = ["review"])
+review_df['review']=review_df['review'].apply(lambda x:review_cleaning(x))
+review_df['review1']=review_df['review'].apply(lambda x:remove_digits(x))
+review_df['cleaned_review']=review_df['review1'].apply(lambda x:strip_emoji(x))
+review_df['cleaned_review'] = review_df['cleaned_review'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
+review_df['tokenized_sents'] = review_df.apply(lambda row: nltk.word_tokenize(row['cleaned_review']), axis=1)
+saved_tfidf = pickle.load(open('final_tfidf.pickle','rb'))
+eva = saved_tfidf.transform(review_df['tokenized_sents'])
+saved_model = pickle.load(open('final_model.pickle','rb'))
+pred=saved_model.predict(eva)[0]
+print('\033[1m' + 'Sentiment:' + '\033[0m')
+if pred==2:
+    print("Positive")
+elif pred==1:
+    print("Neutral")
+else:
+    print("Negative")
+
+
+
